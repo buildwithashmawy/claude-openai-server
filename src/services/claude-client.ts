@@ -206,6 +206,61 @@ export async function createCompletion(
 }
 
 /**
+ * Format a tool call announcement with rich context extracted from its input.
+ */
+function formatToolAnnouncement(name: string, inputJson: string): string {
+  try {
+    const input = JSON.parse(inputJson);
+    switch (name) {
+      case "Read":
+        return `\n\n**Reading** \`${input.file_path}\`\n\n`;
+      case "Edit":
+        return `\n\n**Editing** \`${input.file_path}\`\n\n`;
+      case "Write":
+        return `\n\n**Writing** \`${input.file_path}\`\n\n`;
+      case "Bash": {
+        const cmd = (input.command as string) || "";
+        const display = cmd.length > 120 ? cmd.slice(0, 117) + "..." : cmd;
+        return `\n\n**Running command**\n\`\`\`bash\n${display}\n\`\`\`\n\n`;
+      }
+      case "Grep":
+        return `\n\n**Searching** for \`${input.pattern}\`${input.path ? ` in \`${input.path}\`` : ""}\n\n`;
+      case "Glob":
+        return `\n\n**Finding files** matching \`${input.pattern}\`\n\n`;
+      case "WebFetch":
+        return `\n\n**Fetching** \`${input.url}\`\n\n`;
+      case "WebSearch":
+        return `\n\n**Searching web** for "${input.query}"\n\n`;
+      case "Task":
+        return `\n\n**Launching agent** ${input.description || ""}\n\n`;
+      case "TodoWrite":
+        return ""; // silent — not useful to show
+      default:
+        return `\n\n**${name}**\n\n`;
+    }
+  } catch {
+    return `\n\n**${name}**\n\n`;
+  }
+}
+
+/**
+ * Format a tool result summary. Truncates long output to keep
+ * the chat readable, and wraps multi-line output in a code block.
+ */
+function formatToolSummary(summary: string): string {
+  if (!summary) return "";
+  const MAX = 600;
+  const trimmed = summary.length > MAX
+    ? summary.slice(0, MAX) + "\n...(truncated)"
+    : summary;
+  // Multi-line summaries get a fenced block; single-line stays inline.
+  if (trimmed.includes("\n")) {
+    return `\n<details>\n<summary>Result</summary>\n\n\`\`\`\n${trimmed}\n\`\`\`\n</details>\n\n`;
+  }
+  return `\n> ${trimmed}\n\n`;
+}
+
+/**
  * Streaming: run query, call onDelta for each text chunk, then return full text.
  * This keeps the generator iteration in the same async context as query()
  * creation, which avoids a timing race in the SDK subprocess lifecycle.
@@ -222,40 +277,73 @@ export async function createStreamingCompletion(
   };
   process.stderr.write(`[claude-sdk] Streaming query: "${prompt.slice(0, 80)}..."\n`);
 
-  // Track which tools we've already announced so tool_progress
-  // doesn't spam the stream (it fires repeatedly with elapsed time).
+  // Accumulate tool_use content blocks from stream events so we can
+  // produce rich announcements with file paths, commands, etc.
+  const pendingTools = new Map<number, { name: string; inputJson: string }>();
+  // Track tool_use_ids that already got an announcement via stream events
+  // so tool_progress doesn't duplicate them.
   const announcedTools = new Set<string>();
 
   return runQuery(prompt, opts, (message) => {
     if (!onDelta) return;
 
-    // Stream text deltas from the LLM response
     if (message.type === "stream_event") {
       const event = message.event as Record<string, unknown>;
+
+      // --- text deltas: stream straight through ---
       if (event.type === "content_block_delta") {
         const delta = event.delta as Record<string, unknown>;
         if (delta.type === "text_delta" && typeof delta.text === "string") {
           onDelta(delta.text);
         }
+        // Accumulate tool input JSON fragments
+        if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") {
+          const idx = event.index as number;
+          const tc = pendingTools.get(idx);
+          if (tc) tc.inputJson += delta.partial_json;
+        }
+      }
+
+      // --- tool_use block start: register it ---
+      if (event.type === "content_block_start") {
+        const block = event.content_block as Record<string, unknown>;
+        if (block?.type === "tool_use") {
+          const idx = event.index as number;
+          pendingTools.set(idx, { name: block.name as string, inputJson: "" });
+          // Mark the tool_use_id so tool_progress won't duplicate
+          if (typeof block.id === "string") announcedTools.add(block.id);
+        }
+      }
+
+      // --- tool_use block stop: emit rich announcement ---
+      if (event.type === "content_block_stop") {
+        const idx = event.index as number;
+        const tc = pendingTools.get(idx);
+        if (tc) {
+          const formatted = formatToolAnnouncement(tc.name, tc.inputJson);
+          if (formatted) onDelta(formatted);
+          pendingTools.delete(idx);
+        }
       }
     }
 
-    // Show tool activity so Cursor displays progress instead of silence
+    // Fallback: if a tool wasn't announced via stream events (e.g. when
+    // includePartialMessages misses it), show a simple progress line.
     if (message.type === "tool_progress") {
       const prog = message as Record<string, unknown>;
       const toolId = prog.tool_use_id as string;
       const toolName = prog.tool_name as string;
       if (toolName && toolId && !announcedTools.has(toolId)) {
         announcedTools.add(toolId);
-        onDelta(`\n\n> *Using ${toolName}...*\n\n`);
+        onDelta(`\n\n**${toolName}** ...\n\n`);
       }
     }
 
-    // Show tool results summary
+    // Tool result summaries — formatted and optionally truncated
     if (message.type === "tool_use_summary") {
       const summary = (message as Record<string, unknown>).summary as string;
       if (summary) {
-        onDelta(`\n\n> ${summary}\n\n`);
+        onDelta(formatToolSummary(summary));
       }
     }
   });
