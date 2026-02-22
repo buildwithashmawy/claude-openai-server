@@ -54,8 +54,19 @@ This gives you a public URL like `https://abc123.ngrok-free.app`.
 |---|---|---|
 | `PORT` | `3456` | Port the server listens on |
 | `HOST` | `0.0.0.0` | Bind address (`0.0.0.0` to allow tunnel access) |
-| `CLAUDE_CODE_PATH` | `claude` | Path to the Claude Code CLI binary |
+| `CWD` | `process.cwd()` | Working directory for Claude Code (set to your project root) |
+| `ADDITIONAL_DIRS` | *(none)* | Comma-separated extra directories Claude can access (e.g. `~/other-project,/tmp`) |
+| `MAX_TURNS` | `30` | Maximum agentic turns per request |
 | `REQUEST_TIMEOUT` | `300000` | Request timeout in milliseconds (default 5 min) |
+| `DEBUG` | *(none)* | Set to `1` for verbose SDK logging |
+
+### Important: Set `CWD` to your workspace
+
+Claude Code resolves file paths relative to `CWD`. If you run the proxy from a different directory than your project, the agent won't be able to read your project files:
+
+```bash
+CWD=/path/to/your/project node dist/index.js
+```
 
 ## How It Works
 

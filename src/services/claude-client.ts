@@ -12,6 +12,9 @@ interface ContentPart {
 
 const MAX_TURNS = parseInt(process.env.MAX_TURNS || "30", 10);
 const CWD = process.env.CWD || process.cwd();
+const ADDITIONAL_DIRS = process.env.ADDITIONAL_DIRS
+  ? process.env.ADDITIONAL_DIRS.split(",").map((d) => d.trim()).filter(Boolean)
+  : [];
 
 /**
  * Normalize content — Cursor/OpenAI can send either:
@@ -115,9 +118,15 @@ function baseOptions(
   const opts: Options = {
     maxTurns: MAX_TURNS,
     cwd: CWD,
+    // Let the CLI access directories beyond CWD (e.g. user's workspace).
+    additionalDirectories: ADDITIONAL_DIRS,
     env: cleanEnv(),
     persistSession: false,
-    settingSources: [],
+    // Load user-level settings (~/.claude/settings.json) so the CLI has
+    // the user's configured allowed directories and tools.
+    // Omitting this or using [] = "SDK isolation mode" where the CLI
+    // has NO allowed paths and blocks most tool operations.
+    settingSources: ["user"],
     permissionMode: "default",
     // Auto-approve all tool calls via the stdio permission prompt protocol.
     // The callback receives every permission request and approves it,
