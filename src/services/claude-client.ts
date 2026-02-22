@@ -100,6 +100,8 @@ function baseOptions(
     settingSources: [],
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
+    thinking: { type: "disabled" },
+    debug: !!process.env.DEBUG,
     stderr: (data: string) => {
       process.stderr.write(`[claude-sdk] ${data}`);
     },
