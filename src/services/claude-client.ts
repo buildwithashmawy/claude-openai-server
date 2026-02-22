@@ -115,18 +115,18 @@ function baseOptions(
   const opts: Options = {
     maxTurns: MAX_TURNS,
     cwd: CWD,
-    // Omit `tools` — let the CLI use its full default toolset.
-    // Omit `permissionMode` — let the CLI use its default; permission
-    // prompts are routed through canUseTool via --permission-prompt-tool stdio.
     env: cleanEnv(),
     persistSession: false,
     settingSources: [],
-    // Auto-approve all tool calls. This avoids bypassPermissions
-    // (which the CLI rejects under root/sudo) while still allowing
-    // full agent capabilities including Read, Write, Bash, etc.
-    canUseTool: async (toolName, input) => {
-      process.stderr.write(`[claude-sdk] tool-approve: ${toolName}\n`);
-      return { behavior: "allow" as const };
+    permissionMode: "default",
+    // Auto-approve all tool calls via the stdio permission prompt protocol.
+    // The callback receives every permission request and approves it,
+    // returning the toolUseID so the CLI can match approval to the call.
+    canUseTool: async (toolName, input, options) => {
+      process.stderr.write(
+        `[claude-sdk] tool-approve: ${toolName} (id=${options.toolUseID}, reason=${options.decisionReason ?? "none"})\n`
+      );
+      return { behavior: "allow" as const, toolUseID: options.toolUseID };
     },
     debug: !!process.env.DEBUG,
     stderr: (data: string) => {
@@ -221,14 +221,40 @@ export async function createStreamingCompletion(
   };
   process.stderr.write(`[claude-sdk] Streaming query: "${prompt.slice(0, 80)}..."\n`);
 
+  // Track which tools we've already announced so tool_progress
+  // doesn't spam the stream (it fires repeatedly with elapsed time).
+  const announcedTools = new Set<string>();
+
   return runQuery(prompt, opts, (message) => {
-    if (message.type === "stream_event" && onDelta) {
+    if (!onDelta) return;
+
+    // Stream text deltas from the LLM response
+    if (message.type === "stream_event") {
       const event = message.event as Record<string, unknown>;
       if (event.type === "content_block_delta") {
         const delta = event.delta as Record<string, unknown>;
         if (delta.type === "text_delta" && typeof delta.text === "string") {
           onDelta(delta.text);
         }
+      }
+    }
+
+    // Show tool activity so Cursor displays progress instead of silence
+    if (message.type === "tool_progress") {
+      const prog = message as Record<string, unknown>;
+      const toolId = prog.tool_use_id as string;
+      const toolName = prog.tool_name as string;
+      if (toolName && toolId && !announcedTools.has(toolId)) {
+        announcedTools.add(toolId);
+        onDelta(`\n\n> *Using ${toolName}...*\n\n`);
+      }
+    }
+
+    // Show tool results summary
+    if (message.type === "tool_use_summary") {
+      const summary = (message as Record<string, unknown>).summary as string;
+      if (summary) {
+        onDelta(`\n\n> ${summary}\n\n`);
       }
     }
   });
