@@ -1,0 +1,32 @@
+{
+  "name": "claude-code-openai-proxy",
+  "version": "1.0.0",
+  "description": "Local OpenAI-compatible API server that proxies requests to Claude Code CLI",
+  "main": "dist/index.js",
+  "bin": {
+    "claude-code-openai-proxy": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "keywords": [
+    "claude",
+    "openai",
+    "proxy",
+    "cursor",
+    "claude-code"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
