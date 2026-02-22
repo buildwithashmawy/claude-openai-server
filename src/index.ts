@@ -6,7 +6,7 @@ import completionsRouter from "./routes/completions";
 import modelsRouter from "./routes/models";
 
 const PORT = parseInt(process.env.PORT || "3456", 10);
-const HOST = process.env.HOST || "127.0.0.1";
+const HOST = process.env.HOST || "0.0.0.0";
 
 const app = express();
 

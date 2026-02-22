@@ -23,17 +23,37 @@ The server starts on `http://127.0.0.1:3456` by default.
 
 ## Configure Cursor
 
+Cursor's "Override OpenAI Base URL" routes requests through Cursor's cloud servers, which block connections to `localhost` (SSRF protection). You need to expose the proxy via an HTTPS tunnel.
+
+### Step 1: Start the proxy
+
+```bash
+node dist/index.js
+```
+
+### Step 2: Create an HTTPS tunnel with ngrok
+
+```bash
+ngrok http 3456
+```
+
+This gives you a public URL like `https://abc123.ngrok-free.app`.
+
+### Step 3: Configure Cursor
+
 1. Go to **Cursor Settings > Models > Override OpenAI Base URL**
-2. Set the base URL to `http://localhost:3456/v1`
+2. Set the base URL to `https://abc123.ngrok-free.app/v1` (your ngrok URL + `/v1`)
 3. Set any string as the API key (e.g., `sk-not-needed`) — it's ignored
 4. Select `claude-code` as the model
+
+> **Note:** If Cursor rejects the model name `claude-code`, you can use any model name — the proxy ignores the model field and always routes to Claude Code CLI.
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3456` | Port the server listens on |
-| `HOST` | `127.0.0.1` | Bind address (localhost only for security) |
+| `HOST` | `0.0.0.0` | Bind address (`0.0.0.0` to allow tunnel access) |
 | `CLAUDE_CODE_PATH` | `claude` | Path to the Claude Code CLI binary |
 | `REQUEST_TIMEOUT` | `300000` | Request timeout in milliseconds (default 5 min) |
 
