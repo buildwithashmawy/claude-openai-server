@@ -19,35 +19,48 @@ function cleanEnv(): Record<string, string | undefined> {
 }
 
 /**
- * Convert OpenAI-style messages to a single prompt string.
- * System messages become a preamble, user/assistant messages
- * form the conversation.
+ * Extract system prompt and the last user message from OpenAI messages.
+ * Prior conversation turns are folded into the system prompt as context.
  */
 function messagesToPrompt(messages: Message[]): {
   systemPrompt: string | undefined;
   prompt: string;
 } {
-  let systemPrompt: string | undefined;
-  const turns: string[] = [];
+  let systemParts: string[] = [];
+  const turns: Message[] = [];
 
   for (const msg of messages) {
     if (msg.role === "system") {
-      systemPrompt = systemPrompt
-        ? `${systemPrompt}\n\n${msg.content}`
-        : msg.content;
-    } else if (msg.role === "user") {
-      turns.push(`Human: ${msg.content}`);
-    } else if (msg.role === "assistant") {
-      turns.push(`Assistant: ${msg.content}`);
+      systemParts.push(msg.content);
+    } else {
+      turns.push(msg);
     }
   }
 
-  // If only system messages, use them as the prompt
-  const prompt = turns.length > 0 ? turns.join("\n\n") : systemPrompt || "Hello";
-  if (turns.length > 0) {
-    return { systemPrompt, prompt };
+  // Build system prompt: original system + prior context
+  let systemPrompt: string | undefined;
+  if (systemParts.length > 0) {
+    systemPrompt = systemParts.join("\n\n");
   }
-  return { systemPrompt: undefined, prompt };
+
+  // If there's prior conversation context (not just the last user msg),
+  // prepend it to the system prompt so Claude has the full context.
+  if (turns.length > 1) {
+    const context = turns
+      .slice(0, -1)
+      .map((m) => `[${m.role}]: ${m.content}`)
+      .join("\n\n");
+    const contextBlock = `<conversation_history>\n${context}\n</conversation_history>`;
+    systemPrompt = systemPrompt
+      ? `${systemPrompt}\n\n${contextBlock}`
+      : contextBlock;
+  }
+
+  // The prompt is just the last user message content
+  const lastUser = [...turns].reverse().find((m) => m.role === "user");
+  const prompt = lastUser?.content || turns[turns.length - 1]?.content || "Hello";
+
+  return { systemPrompt, prompt };
 }
 
 function baseOptions(
@@ -59,6 +72,12 @@ function baseOptions(
     tools: [],
     env: cleanEnv(),
     persistSession: false,
+    settingSources: [],
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    stderr: (data: string) => {
+      process.stderr.write(`[claude-sdk] ${data}`);
+    },
   };
 
   if (systemPrompt) {
@@ -80,6 +99,8 @@ export async function createCompletion(
   model?: string
 ): Promise<string> {
   const { systemPrompt, prompt } = messagesToPrompt(messages);
+  process.stderr.write(`[claude-sdk] Non-streaming query: "${prompt.slice(0, 80)}..."\n`);
+
   const q = query({
     prompt,
     options: baseOptions(systemPrompt, model),
@@ -88,6 +109,8 @@ export async function createCompletion(
   let resultText = "";
 
   for await (const message of q) {
+    process.stderr.write(`[claude-sdk] msg: ${message.type}${("subtype" in message) ? `.${message.subtype}` : ""}\n`);
+
     if (message.type === "result" && message.subtype === "success") {
       resultText = message.result;
     }
@@ -105,6 +128,8 @@ export function createStreamingCompletion(
   model?: string
 ): { stream: AsyncGenerator<SDKMessage, void>; close: () => void } {
   const { systemPrompt, prompt } = messagesToPrompt(messages);
+  process.stderr.write(`[claude-sdk] Streaming query: "${prompt.slice(0, 80)}..."\n`);
+
   const q = query({
     prompt,
     options: {
