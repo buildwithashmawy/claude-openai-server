@@ -16,10 +16,14 @@ export interface ClaudeProcess {
 export function runClaude(prompt: string, workingDirectory: string): ClaudeProcess {
   const args = ["-p", prompt, "--output-format", "json", "--verbose"];
 
+  // Strip CLAUDECODE env var to avoid "nested session" detection
+  const env = { ...process.env };
+  delete env.CLAUDECODE;
+
   const child = spawn(CLAUDE_CODE_PATH, args, {
     cwd: workingDirectory,
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env },
+    env,
   });
 
   const result = new Promise<ClaudeResult>((resolve, reject) => {

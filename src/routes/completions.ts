@@ -60,6 +60,7 @@ router.post("/v1/chat/completions", async (req: Request, res: Response) => {
 
     if (result.exitCode !== 0) {
       const errMsg = `Claude Code process exited with code ${result.exitCode}: ${result.stderr.trim()}`;
+      process.stderr.write(`[claude-runner] Error: ${errMsg}\n`);
       if (!res.headersSent) {
         res.status(500).json(buildError(errMsg));
       }
