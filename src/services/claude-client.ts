@@ -2,7 +2,28 @@ import { query, type SDKMessage, type Options } from "@anthropic-ai/claude-agent
 
 export interface Message {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ContentPart[];
+}
+
+interface ContentPart {
+  type: string;
+  text?: string;
+}
+
+/**
+ * Normalize content — Cursor/OpenAI can send either:
+ *   "hello"
+ *   [{type: "text", text: "hello"}]
+ */
+function textOf(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((p) => p.type === "text" && p.text)
+      .map((p) => p.text!)
+      .join("\n");
+  }
+  return String(content);
 }
 
 /**
@@ -31,7 +52,7 @@ function messagesToPrompt(messages: Message[]): {
 
   for (const msg of messages) {
     if (msg.role === "system") {
-      systemParts.push(msg.content);
+      systemParts.push(textOf(msg.content));
     } else {
       turns.push(msg);
     }
@@ -48,7 +69,7 @@ function messagesToPrompt(messages: Message[]): {
   if (turns.length > 1) {
     const context = turns
       .slice(0, -1)
-      .map((m) => `[${m.role}]: ${m.content}`)
+      .map((m) => `[${m.role}]: ${textOf(m.content)}`)
       .join("\n\n");
     const contextBlock = `<conversation_history>\n${context}\n</conversation_history>`;
     systemPrompt = systemPrompt
@@ -58,7 +79,11 @@ function messagesToPrompt(messages: Message[]): {
 
   // The prompt is just the last user message content
   const lastUser = [...turns].reverse().find((m) => m.role === "user");
-  const prompt = lastUser?.content || turns[turns.length - 1]?.content || "Hello";
+  const prompt = lastUser
+    ? textOf(lastUser.content)
+    : turns.length > 0
+      ? textOf(turns[turns.length - 1].content)
+      : "Hello";
 
   return { systemPrompt, prompt };
 }
