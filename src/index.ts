@@ -34,10 +34,14 @@ app.get("/health", (_req, res) => {
 app.use(completionsRouter);
 app.use(modelsRouter);
 
+const MAX_TURNS = process.env.MAX_TURNS || "30";
+const CWD = process.env.CWD || process.cwd();
+
 app.listen(PORT, HOST, () => {
   console.log(`Claude Code → OpenAI proxy on http://${HOST}:${PORT}`);
   console.log(`  POST /v1/chat/completions`);
   console.log(`  GET  /v1/models`);
   console.log(`  GET  /health`);
+  console.log(`  cwd: ${CWD}  maxTurns: ${MAX_TURNS}`);
   console.log(`Uses your Claude Code auth (run "claude login" first).`);
 });

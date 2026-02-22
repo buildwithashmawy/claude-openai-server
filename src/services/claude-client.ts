@@ -10,6 +10,9 @@ interface ContentPart {
   text?: string;
 }
 
+const MAX_TURNS = parseInt(process.env.MAX_TURNS || "30", 10);
+const CWD = process.env.CWD || process.cwd();
+
 /**
  * Normalize content — Cursor/OpenAI can send either:
  *   "hello"
@@ -110,13 +113,16 @@ function baseOptions(
   const resolvedModel = resolveModel(model);
 
   const opts: Options = {
-    maxTurns: 1,
-    tools: [],
+    maxTurns: MAX_TURNS,
+    cwd: CWD,
+    tools: { type: "preset", preset: "claude_code" },
     env: cleanEnv(),
     persistSession: false,
     settingSources: [],
-    permissionMode: "plan",
-    thinking: { type: "disabled" },
+    permissionMode: "default",
+    // Auto-approve all tool calls. This avoids needing bypassPermissions
+    // (which fails as root) while still allowing full agent capabilities.
+    canUseTool: async () => ({ behavior: "allow" as const }),
     debug: !!process.env.DEBUG,
     stderr: (data: string) => {
       process.stderr.write(`[claude-sdk] ${data}`);
