@@ -32,38 +32,49 @@ router.post("/v1/chat/completions", async (req: Request, res: Response) => {
         close();
       });
 
+      let streamedText = false;
+      let fallbackText = "";
+
       for await (const message of sdkStream) {
         if (aborted) break;
 
         const subtype = ("subtype" in message) ? `.${message.subtype}` : "";
         process.stderr.write(`[stream] msg: ${message.type}${subtype}\n`);
 
-        // Stream text deltas from partial assistant messages
+        // Stream text deltas from partial assistant messages (real-time streaming)
         if (message.type === "stream_event") {
           const event = message.event as Record<string, unknown>;
           if (event.type === "content_block_delta") {
             const delta = event.delta as Record<string, unknown>;
             if (delta.type === "text_delta" && typeof delta.text === "string") {
               sendSSE(res, buildChunk(chatId, delta.text, null, undefined, model));
+              streamedText = true;
             }
           }
         }
 
-        // Also handle full assistant messages as fallback
-        if (message.type === "assistant" && message.message) {
-          const betaMsg = message.message as Record<string, unknown>;
-          const content = betaMsg.content as Array<Record<string, unknown>> | undefined;
-          if (content) {
-            for (const block of content) {
-              if (block.type === "text" && typeof block.text === "string") {
-                sendSSE(res, buildChunk(chatId, block.text, null, undefined, model));
-              }
+        // Capture result text as fallback (in case stream_event didn't fire)
+        if (message.type === "result") {
+          if (message.subtype === "success") {
+            fallbackText = (message as { result: string }).result;
+          } else {
+            // Error result — surface it to the client
+            const errors = (message as { errors?: string[] }).errors;
+            const errMsg = errors?.join("; ") || "Claude Code query failed";
+            process.stderr.write(`[stream] SDK error result: ${errMsg}\n`);
+            if (!streamedText) {
+              sendSSE(res, buildChunk(chatId, `Error: ${errMsg}`, null, undefined, model));
+              streamedText = true;
             }
           }
         }
       }
 
       if (!aborted) {
+        // If no streaming events were emitted, send the result text as a single chunk
+        if (!streamedText && fallbackText) {
+          sendSSE(res, buildChunk(chatId, fallbackText, null, undefined, model));
+        }
         sendSSE(res, buildChunk(chatId, undefined, "stop", undefined, model));
         endSSE(res);
       }
