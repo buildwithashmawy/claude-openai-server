@@ -22,8 +22,7 @@ function buildPrompt(messages: Message[]): string {
 }
 
 router.post("/v1/chat/completions", async (req: Request, res: Response) => {
-  const { messages, stream, model } = req.body;
-  const modelName = model || "gpt-4o";
+  const { messages, stream } = req.body;
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     res.status(400).json(buildError("messages array is required and must not be empty", "invalid_request"));
@@ -76,19 +75,19 @@ router.post("/v1/chat/completions", async (req: Request, res: Response) => {
       const tokens = splitIntoTokens(responseText);
 
       // Send initial chunk with role
-      sendSSE(res, buildChunk(chatId, "", null, "assistant", modelName));
+      sendSSE(res, buildChunk(chatId, "", null, "assistant"));
 
       // Stream content in token-sized chunks
       for (const token of tokens) {
-        sendSSE(res, buildChunk(chatId, token, null, undefined, modelName));
+        sendSSE(res, buildChunk(chatId, token, null));
       }
 
       // Send final chunk with finish_reason
-      sendSSE(res, buildChunk(chatId, undefined, "stop", undefined, modelName));
+      sendSSE(res, buildChunk(chatId, undefined, "stop"));
 
       endSSE(res);
     } else {
-      res.json(buildChatCompletion(responseText, modelName));
+      res.json(buildChatCompletion(responseText));
     }
   } catch (err) {
     finished = true;

@@ -26,7 +26,7 @@ The server starts on `http://127.0.0.1:3456` by default.
 1. Go to **Cursor Settings > Models > Override OpenAI Base URL**
 2. Set the base URL to `http://localhost:3456/v1`
 3. Set any string as the API key (e.g., `sk-not-needed`) — it's ignored
-4. Select `gpt-4o` as the model (the proxy advertises itself as `gpt-4o` so Cursor accepts it, but all requests are routed to Claude Code)
+4. Select `claude-code` as the model
 
 ## Environment Variables
 
@@ -63,5 +63,5 @@ The server receives OpenAI-formatted chat completion requests, converts the mess
 ## API Endpoints
 
 - **POST /v1/chat/completions** — Main chat completion endpoint (streaming and non-streaming)
-- **GET /v1/models** — Returns available models (advertises as `gpt-4o` for client compatibility)
+- **GET /v1/models** — Returns available models (single `claude-code` model)
 - **GET /health** — Health check
