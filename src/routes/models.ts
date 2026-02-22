@@ -7,10 +7,10 @@ router.get("/v1/models", (_req: Request, res: Response) => {
     object: "list",
     data: [
       {
-        id: "claude-code",
+        id: "gpt-4o",
         object: "model",
         created: Math.floor(Date.now() / 1000),
-        owned_by: "anthropic",
+        owned_by: "claude-code-proxy",
       },
     ],
   });
