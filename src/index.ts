@@ -35,9 +35,9 @@ app.use(completionsRouter);
 app.use(modelsRouter);
 
 app.listen(PORT, HOST, () => {
-  console.log(`Claude → OpenAI proxy on http://${HOST}:${PORT}`);
+  console.log(`Claude Code → OpenAI proxy on http://${HOST}:${PORT}`);
   console.log(`  POST /v1/chat/completions`);
   console.log(`  GET  /v1/models`);
   console.log(`  GET  /health`);
-  console.log(`Set ANTHROPIC_API_KEY env var to authenticate.`);
+  console.log(`Uses your Claude Code auth (run "claude login" first).`);
 });
