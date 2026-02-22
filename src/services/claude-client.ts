@@ -115,14 +115,19 @@ function baseOptions(
   const opts: Options = {
     maxTurns: MAX_TURNS,
     cwd: CWD,
-    tools: { type: "preset", preset: "claude_code" },
+    // Omit `tools` — let the CLI use its full default toolset.
+    // Omit `permissionMode` — let the CLI use its default; permission
+    // prompts are routed through canUseTool via --permission-prompt-tool stdio.
     env: cleanEnv(),
     persistSession: false,
     settingSources: [],
-    permissionMode: "default",
-    // Auto-approve all tool calls. This avoids needing bypassPermissions
-    // (which fails as root) while still allowing full agent capabilities.
-    canUseTool: async () => ({ behavior: "allow" as const }),
+    // Auto-approve all tool calls. This avoids bypassPermissions
+    // (which the CLI rejects under root/sudo) while still allowing
+    // full agent capabilities including Read, Write, Bash, etc.
+    canUseTool: async (toolName, input) => {
+      process.stderr.write(`[claude-sdk] tool-approve: ${toolName}\n`);
+      return { behavior: "allow" as const };
+    },
     debug: !!process.env.DEBUG,
     stderr: (data: string) => {
       process.stderr.write(`[claude-sdk] ${data}`);
@@ -160,8 +165,20 @@ async function runQuery(
 
       if (onMessage) onMessage(message);
 
-      if (message.type === "result" && message.subtype === "success") {
-        resultText = message.result;
+      // Log tool use for debugging
+      if (message.type === "tool_use_summary") {
+        const summary = message as Record<string, unknown>;
+        process.stderr.write(`[claude-sdk] tool: ${JSON.stringify(summary).slice(0, 300)}\n`);
+      }
+
+      if (message.type === "result") {
+        if (message.subtype === "success") {
+          resultText = message.result;
+        } else {
+          // Log error results (max_turns, errors, etc.)
+          const errResult = message as Record<string, unknown>;
+          process.stderr.write(`[claude-sdk] result error: ${JSON.stringify(errResult).slice(0, 500)}\n`);
+        }
       }
     }
   } catch (err) {
