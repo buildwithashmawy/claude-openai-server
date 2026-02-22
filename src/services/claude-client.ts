@@ -118,25 +118,17 @@ function baseOptions(
   const opts: Options = {
     maxTurns: MAX_TURNS,
     cwd: CWD,
-    // Let the CLI access directories beyond CWD (e.g. user's workspace).
     additionalDirectories: ADDITIONAL_DIRS,
     env: cleanEnv(),
     persistSession: false,
-    // Load user-level settings (~/.claude/settings.json) so the CLI has
-    // the user's configured allowed directories and tools.
-    // Omitting this or using [] = "SDK isolation mode" where the CLI
-    // has NO allowed paths and blocks most tool operations.
-    settingSources: ["user"],
-    permissionMode: "default",
-    // Auto-approve all tool calls via the stdio permission prompt protocol.
-    // The callback receives every permission request and approves it,
-    // returning the toolUseID so the CLI can match approval to the call.
-    canUseTool: async (toolName, input, options) => {
-      process.stderr.write(
-        `[claude-sdk] tool-approve: ${toolName} (id=${options.toolUseID}, reason=${options.decisionReason ?? "none"})\n`
-      );
-      return { behavior: "allow" as const, toolUseID: options.toolUseID };
-    },
+    // Load user settings so the CLI has configured tools/directories.
+    settingSources: ["user", "project", "local"],
+    // Bypass ALL permission checks. This is the correct approach for a
+    // proxy server — the CLI runs as a subprocess, not interactively.
+    // allowDangerouslySkipPermissions unlocks the bypassPermissions mode
+    // (which is otherwise blocked when running as root on a VPS).
+    allowDangerouslySkipPermissions: true,
+    permissionMode: "bypassPermissions",
     debug: !!process.env.DEBUG,
     stderr: (data: string) => {
       process.stderr.write(`[claude-sdk] ${data}`);
