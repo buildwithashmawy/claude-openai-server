@@ -88,18 +88,34 @@ function messagesToPrompt(messages: Message[]): {
   return { systemPrompt, prompt };
 }
 
+/**
+ * Only pass model to the SDK if it looks like a valid Anthropic model name.
+ * Cursor sends things like "claude-code", "gpt-4", etc. which are not
+ * valid and could cause the SDK subprocess to fail silently.
+ */
+function resolveModel(model?: string): string | undefined {
+  if (!model) return undefined;
+  if (/^claude-(sonnet|opus|haiku)-/.test(model)) return model;
+  if (/^claude-\d/.test(model)) return model;
+  process.stderr.write(
+    `[claude-sdk] Ignoring unsupported model "${model}", using SDK default\n`
+  );
+  return undefined;
+}
+
 function baseOptions(
   systemPrompt: string | undefined,
   model?: string
 ): Options {
+  const resolvedModel = resolveModel(model);
+
   const opts: Options = {
     maxTurns: 1,
     tools: [],
     env: cleanEnv(),
     persistSession: false,
     settingSources: [],
-    permissionMode: "bypassPermissions",
-    allowDangerouslySkipPermissions: true,
+    permissionMode: "plan",
     thinking: { type: "disabled" },
     debug: !!process.env.DEBUG,
     stderr: (data: string) => {
@@ -111,11 +127,45 @@ function baseOptions(
     opts.systemPrompt = systemPrompt;
   }
 
-  if (model) {
-    opts.model = model;
+  if (resolvedModel) {
+    opts.model = resolvedModel;
   }
 
   return opts;
+}
+
+/**
+ * Run a query and collect the result text. Used by both streaming and
+ * non-streaming paths so that the generator is always iterated in the
+ * same async context it was created (avoiding a timing race in the SDK).
+ */
+async function runQuery(
+  prompt: string,
+  opts: Options,
+  onMessage?: (msg: SDKMessage) => void,
+): Promise<string> {
+  const q = query({ prompt, options: opts });
+  let resultText = "";
+
+  try {
+    for await (const message of q) {
+      const sub = ("subtype" in message) ? `.${(message as {subtype: string}).subtype}` : "";
+      process.stderr.write(`[claude-sdk] msg: ${message.type}${sub}\n`);
+
+      if (onMessage) onMessage(message);
+
+      if (message.type === "result" && message.subtype === "success") {
+        resultText = message.result;
+      }
+    }
+  } catch (err) {
+    // Subprocess may exit with code 1 after delivering the result (e.g. not logged in).
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[claude-sdk] Stream error (${resultText ? "non-fatal" : "fatal"}): ${msg}\n`);
+    if (!resultText) throw err;
+  }
+
+  return resultText;
 }
 
 /**
@@ -126,44 +176,37 @@ export async function createCompletion(
   model?: string
 ): Promise<string> {
   const { systemPrompt, prompt } = messagesToPrompt(messages);
+  const opts = baseOptions(systemPrompt, model);
   process.stderr.write(`[claude-sdk] Non-streaming query: "${prompt.slice(0, 80)}..."\n`);
-
-  const q = query({
-    prompt,
-    options: baseOptions(systemPrompt, model),
-  });
-
-  let resultText = "";
-
-  for await (const message of q) {
-    process.stderr.write(`[claude-sdk] msg: ${message.type}${("subtype" in message) ? `.${message.subtype}` : ""}\n`);
-
-    if (message.type === "result" && message.subtype === "success") {
-      resultText = message.result;
-    }
-  }
-
-  return resultText;
+  return runQuery(prompt, opts);
 }
 
 /**
- * Streaming: returns the async generator of SDK messages.
- * Caller iterates to get stream_event messages with text deltas.
+ * Streaming: run query, call onDelta for each text chunk, then return full text.
+ * This keeps the generator iteration in the same async context as query()
+ * creation, which avoids a timing race in the SDK subprocess lifecycle.
  */
-export function createStreamingCompletion(
+export async function createStreamingCompletion(
   messages: Message[],
-  model?: string
-): { stream: AsyncGenerator<SDKMessage, void>; close: () => void } {
+  model?: string,
+  onDelta?: (text: string) => void,
+): Promise<string> {
   const { systemPrompt, prompt } = messagesToPrompt(messages);
+  const opts = {
+    ...baseOptions(systemPrompt, model),
+    includePartialMessages: true,
+  };
   process.stderr.write(`[claude-sdk] Streaming query: "${prompt.slice(0, 80)}..."\n`);
 
-  const q = query({
-    prompt,
-    options: {
-      ...baseOptions(systemPrompt, model),
-      includePartialMessages: true,
-    },
+  return runQuery(prompt, opts, (message) => {
+    if (message.type === "stream_event" && onDelta) {
+      const event = message.event as Record<string, unknown>;
+      if (event.type === "content_block_delta") {
+        const delta = event.delta as Record<string, unknown>;
+        if (delta.type === "text_delta" && typeof delta.text === "string") {
+          onDelta(delta.text);
+        }
+      }
+    }
   });
-
-  return { stream: q, close: () => q.close() };
 }
