@@ -35,9 +35,9 @@ app.use(completionsRouter);
 app.use(modelsRouter);
 
 app.listen(PORT, HOST, () => {
-  console.log(`Claude Code OpenAI Proxy listening on http://${HOST}:${PORT}`);
-  console.log(`Endpoints:`);
-  console.log(`  POST http://${HOST}:${PORT}/v1/chat/completions`);
-  console.log(`  GET  http://${HOST}:${PORT}/v1/models`);
-  console.log(`  GET  http://${HOST}:${PORT}/health`);
+  console.log(`Claude → OpenAI proxy on http://${HOST}:${PORT}`);
+  console.log(`  POST /v1/chat/completions`);
+  console.log(`  GET  /v1/models`);
+  console.log(`  GET  /health`);
+  console.log(`Set ANTHROPIC_API_KEY env var to authenticate.`);
 });

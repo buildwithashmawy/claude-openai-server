@@ -44,12 +44,12 @@ export function generateChatId(): string {
   return `chatcmpl-${randomUUID()}`;
 }
 
-export function buildChatCompletion(content: string): OpenAIChatCompletionResponse {
+export function buildChatCompletion(content: string, model = "claude-sonnet-4-20250514"): OpenAIChatCompletionResponse {
   return {
     id: generateChatId(),
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
-    model: "claude-code",
+    model,
     choices: [
       {
         index: 0,
@@ -72,7 +72,8 @@ export function buildChunk(
   id: string,
   content: string | undefined,
   finishReason: null | "stop",
-  role?: "assistant"
+  role?: "assistant",
+  model = "claude-sonnet-4-20250514"
 ): OpenAIChatCompletionChunk {
   const delta: { role?: "assistant"; content?: string } = {};
   if (role) delta.role = role;
@@ -82,7 +83,7 @@ export function buildChunk(
     id,
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
-    model: "claude-code",
+    model,
     choices: [
       {
         index: 0,

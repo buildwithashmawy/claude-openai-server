@@ -16,15 +16,3 @@ export function endSSE(res: Response): void {
   res.write("data: [DONE]\n\n");
   res.end();
 }
-
-export function splitIntoTokens(text: string): string[] {
-  // Split by word boundaries, keeping whitespace attached to the following word
-  const chunks: string[] = [];
-  const words = text.split(/(\s+)/);
-  for (const word of words) {
-    if (word.length > 0) {
-      chunks.push(word);
-    }
-  }
-  return chunks;
-}
