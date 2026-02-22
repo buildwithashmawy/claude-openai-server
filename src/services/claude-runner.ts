@@ -16,9 +16,15 @@ export interface ClaudeProcess {
 export function runClaude(prompt: string, workingDirectory: string): ClaudeProcess {
   const args = ["-p", prompt, "--output-format", "json", "--verbose"];
 
-  // Strip CLAUDECODE env var to avoid "nested session" detection
-  const env = { ...process.env };
-  delete env.CLAUDECODE;
+  // Strip all CLAUDE_CODE_* and CLAUDECODE env vars to avoid
+  // "nested session" detection and inheriting parent session state
+  const env: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key === "CLAUDECODE" || key.startsWith("CLAUDE_CODE_")) {
+      continue;
+    }
+    env[key] = value;
+  }
 
   const child = spawn(CLAUDE_CODE_PATH, args, {
     cwd: workingDirectory,
